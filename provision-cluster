@@ -12,6 +12,7 @@ subnet_ids=(subnet-40be5025 subnet-fe67698a subnet-bc879afa)
 instance_type=m4.2xlarge
 ssh_keypath=~/.ssh/devs
 ami=ami-06b94666
+user=ubuntu
 
 zones=(a b c)
 
@@ -43,13 +44,37 @@ provision_consul_cluster ()
 
   for (( i=1; i<=$cluster_size; i++ )); do
     node=docker-swarm-${env}-$i
+    node_ip=$(docker-machine ip $node)
     echo "Running consul on $node..."
     eval $(docker-machine env --shell bash $node)
     docker run -d --net=host --name consul \
            -e 'CONSUL_LOCAL_CONFIG={"skip_leave_on_interrupt": true}' \
-           consul agent -server -dc aws-$region -ui -bind=0.0.0.0 \
-           -client=0.0.0.0 -bootstrap-expect=$cluster_size \
+           consul agent -server -dc aws-$region -ui -advertise=$node_ip \
+           -bind=0.0.0.0 -client=0.0.0.0 -bootstrap-expect=$cluster_size \
            $(if [[ $i -gt 1 ]]; then echo -retry-join=$(docker-machine ip docker-swarm-${env}-1); fi)
+  done
+}
+
+configure_docker_cluster_options ()
+{
+  echo -e "\033[34mConfiguring Docker daemons to use Consul...\033[0m"
+
+  for (( i=1; i<=$cluster_size; i++ )); do
+    node=docker-swarm-${env}-$i
+    node_ip=$(docker-machine ip $node)
+    echo "Configuring Docker cluster on $node..."
+    ssh $user@$node_ip
+    # Docker service file:
+    # [Service]
+    # ExecStart=/usr/bin/docker daemon -H tcp://0.0.0.0:2376 -H unix:///var/run/docker.sock --storage-driver aufs --tlsverify --tlscacert /etc/docker/ca.pem --tlscert /etc/docker/server.pem --tlskey /etc/docker/server-key.pem --label provider=amazonec2
+    # MountFlags=slave
+    # LimitNOFILE=1048576
+    # LimitNPROC=1048576
+    # LimitCORE=infinity
+    # Environment=
+
+    # [Install]
+    # WantedBy=multi-user.target
   done
 }
 

@@ -47,10 +47,10 @@ provision_consul_cluster ()
     node_ip=$(docker-machine ip $node)
     echo "Running consul on $node..."
     eval $(docker-machine env --shell bash $node)
-    docker run -d --net=host --name consul \
+    docker run -d --net=host --name consul --restart=unless-stopped \
            -e 'CONSUL_LOCAL_CONFIG={"skip_leave_on_interrupt": true}' \
-           consul agent -server -dc aws-$region -ui -advertise=$node_ip \
-           -bind=0.0.0.0 -client=0.0.0.0 -bootstrap-expect=$cluster_size \
+           consul agent -server -dc aws-$region -ui -bind=$node_ip \
+           -client=$node_ip -bootstrap-expect=$cluster_size \
            $(if [[ $i -gt 1 ]]; then echo -retry-join=$(docker-machine ip docker-swarm-${env}-1); fi)
   done
 }
@@ -62,19 +62,11 @@ configure_docker_cluster_options ()
   for (( i=1; i<=$cluster_size; i++ )); do
     node=docker-swarm-${env}-$i
     node_ip=$(docker-machine ip $node)
-    echo "Configuring Docker cluster on $node..."
-    ssh $user@$node_ip
-    # Docker service file:
-    # [Service]
-    # ExecStart=/usr/bin/docker daemon -H tcp://0.0.0.0:2376 -H unix:///var/run/docker.sock --storage-driver aufs --tlsverify --tlscacert /etc/docker/ca.pem --tlscert /etc/docker/server.pem --tlskey /etc/docker/server-key.pem --label provider=amazonec2
-    # MountFlags=slave
-    # LimitNOFILE=1048576
-    # LimitNPROC=1048576
-    # LimitCORE=infinity
-    # Environment=
-
-    # [Install]
-    # WantedBy=multi-user.target
+    ssh_cmd="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no $user@$node_ip"
+    echo "Configuring Docker cluster-store on $node..."
+    $ssh_cmd "sudo sed -i '/^ExecStart=/s|\$| --cluster-store=consul:\/\/${node_ip}:8500 --cluster-advertise=ens3:2376|' /etc/systemd/system/docker.service"
+    $ssh_cmd sudo systemctl daemon-reload
+    $ssh_cmd sudo service docker restart
   done
 }
 
@@ -87,10 +79,11 @@ provision_docker_swarm_managers ()
     echo "Running swarm manager on $node..."
     node_ip=$(docker-machine ip $node)
     eval $(docker-machine env --shell bash $node)
-    docker run -d -p 4000:4000 --name swarm_manager --volume /etc/docker:/tls:ro \
-           swarm manage -H :4000 --tlsverify --tlscacert /tls/ca.pem \
-           --tlscert /tls/server.pem --tlskey /tls/server-key.pem \
-           --replication --advertise $node_ip:4000 consul://$node_ip:8500
+    docker run -d -p 4000:4000 --name swarm_manager --restart=unless-stopped \
+           --volume /etc/docker:/tls:ro swarm manage -H :4000 --tlsverify \
+           --tlscacert /tls/ca.pem --tlscert /tls/server.pem \
+           --tlskey /tls/server-key.pem --replication --advertise $node_ip:4000 \
+           consul://$node_ip:8500
   done
 }
 
@@ -103,8 +96,8 @@ provision_docker_swarm_nodes ()
     echo "Running swarm node on $node..."
     node_ip=$(docker-machine ip $node)
     eval $(docker-machine env --shell bash $node)
-    docker run -d --name swarm_node swarm join --advertise $node_ip:2376 \
-           consul://$node_ip:8500
+    docker run -d --name swarm_node --restart=unless-stopped swarm join \
+           --advertise $node_ip:2376 consul://$node_ip:8500
   done
 }
 
@@ -118,6 +111,7 @@ create_overlay_network ()
 
 provision_machines
 provision_consul_cluster
+configure_docker_cluster_options
 provision_docker_swarm_managers
 provision_docker_swarm_nodes
 create_overlay_network

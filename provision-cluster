@@ -52,7 +52,7 @@ provision_consul_cluster ()
     docker run -d --net=host --name consul --restart=unless-stopped \
            -e 'CONSUL_LOCAL_CONFIG={"skip_leave_on_interrupt": true}' \
            consul agent -server -dc aws-$region -ui -bind=$node_ip \
-           -client=$node_ip -bootstrap-expect=$cluster_size \
+           -client=0.0.0.0 -bootstrap-expect=$cluster_size \
            $(if [[ $i -gt 1 ]]; then echo -retry-join=$(docker-machine ip docker-swarm-${env}-1); fi)
   done
 }

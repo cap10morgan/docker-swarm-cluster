@@ -6,6 +6,8 @@ env=$1
 
 cluster_size=3
 
+overlay_network_subnet=10.37.6.0/24
+
 region=us-west-2
 vpc_id=vpc-35de3850
 subnet_ids=(subnet-40be5025 subnet-fe67698a subnet-bc879afa)
@@ -106,7 +108,7 @@ create_overlay_network ()
   echo -e "\033[34mCreating $env overlay network...\033[0m"
 
   eval $(docker-machine env --shell bash docker-swarm-${env}-1)
-  docker network create --driver overlay --subnet=10.37.0.0/16 $env
+  docker network create --driver overlay --subnet=$overlay_network_subnet $env
 }
 
 provision_machines

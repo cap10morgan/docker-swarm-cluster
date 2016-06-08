@@ -47,12 +47,12 @@ provision_consul_cluster ()
 
   for (( i=1; i<=$cluster_size; i++ )); do
     node=docker-swarm-${env}-$i
-    node_ip=$(docker-machine ip $node)
     echo "Running consul on $node..."
+    node_ip=$(docker-machine ip $node)
     eval $(docker-machine env --shell bash $node)
     docker run -d --net=host --name consul --restart=unless-stopped \
            -e 'CONSUL_LOCAL_CONFIG={"skip_leave_on_interrupt": true}' \
-           consul agent -server -dc aws-$region -ui -bind=$node_ip \
+           consul:v0.6.4 agent -server -dc aws-$region -ui -bind=$node_ip \
            -client=0.0.0.0 -bootstrap-expect=$cluster_size \
            $(if [[ $i -gt 1 ]]; then echo -retry-join=$(docker-machine ip docker-swarm-${env}-1); fi)
   done
@@ -73,6 +73,21 @@ configure_docker_cluster_options ()
   done
 }
 
+provision_dnsmasq_forwarders ()
+{
+  echo -e "\033[34mProvisioning dnsmasq forwarders for Consul DNS...\033[0m"
+
+  for (( i=1; i<=$cluster_size; i++ )); do
+    node=docker-swarm-${env}-$i
+    echo "Running dnsmasq on $node..."
+    node_ip=$(docker-machine ip $node)
+    eval $(docker-machine env --shell bash $node)
+    docker run -d --name dnsmasq -p 53:53/tcp -p 53:53/udp --cap-add=NET_ADMIN \
+           --restart=unless-stopped \
+           andyshinn/dnsmasq:2.75 -S /consul/${node_ip}#8600 --log-facility=-
+  done
+}
+
 provision_docker_swarm_managers ()
 {
   echo -e "\033[34mRunning Docker Swarm managers...\033[0m"
@@ -86,7 +101,7 @@ provision_docker_swarm_managers ()
            --volume /etc/docker:/tls:ro swarm manage -H :4000 --tlsverify \
            --tlscacert /tls/ca.pem --tlscert /tls/server.pem \
            --tlskey /tls/server-key.pem --replication --advertise $node_ip:4000 \
-           consul://$node_ip:8500
+           consul://${node_ip}:8500
   done
 }
 
@@ -100,7 +115,7 @@ provision_docker_swarm_nodes ()
     node_ip=$(docker-machine ip $node)
     eval $(docker-machine env --shell bash $node)
     docker run -d --name swarm_node --restart=unless-stopped swarm join \
-           --advertise $node_ip:2376 consul://$node_ip:8500
+           --advertise $node_ip:2376 consul://${node_ip}:8500
   done
 }
 
@@ -112,9 +127,32 @@ create_overlay_network ()
   docker network create --driver overlay --subnet=$overlay_network_subnet $env
 }
 
+provision_rabbitmq_cluster ()
+{
+  echo -e "\033[34mProvisioning RabbitMQ cluster...\033[0m"
+
+  node_ip=$(docker-machine ip docker-swarm-${env}-1)
+  eval $(docker-machine env --shell bash docker-swarm-${env}-1)
+
+  for (( i=1; i<=$cluster_size; i++ )); do
+    echo "Running RabbitMQ node $i"
+    docker -H ${node_ip}:4000 run -d --dns=172.17.0.1 --dns-search=node.consul \
+           --name rabbitmq-$i --hostname docker-swarm-${env}-$i \
+           -p 5672:5672 -p 15672:15672 -p 4369:4369 -p 25672:25672 \
+           --restart=unless-stopped -e AUTOCLUSTER_TYPE=consul \
+           -e AUTOCLUSTER_CLEANUP=true -e CLEANUP_WARN_ONLY=false \
+           -e AUTOCLUSTER_LOG_LEVEL=debug -e CONSUL_HOST=172.17.0.1 \
+           cap10morgan/rabbitmq-autocluster-debug:0.6.0
+    # give the first node a chance to come up & register w/ consul
+    if [[ $i == 1 ]]; then sleep 30; fi
+  done
+}
+
 provision_machines
 provision_consul_cluster
 configure_docker_cluster_options
+provision_dnsmasq_forwarders
 provision_docker_swarm_managers
 provision_docker_swarm_nodes
 create_overlay_network
+provision_rabbitmq_cluster

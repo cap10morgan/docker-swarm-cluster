@@ -36,8 +36,9 @@ provision_machines ()
                    --amazonec2-use-ebs-optimized-instance \
                    --amazonec2-ssh-keypath $ssh_keypath \
                    --amazonec2-ami $ami --amazonec2-zone ${zones[$i-1]} \
-                   docker-swarm-${env}-$i
+                   docker-swarm-${env}-$i &
   done
+  wait
 }
 
 provision_consul_cluster ()

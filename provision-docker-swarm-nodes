@@ -1,0 +1,19 @@
+#!/bin/bash
+
+set -e
+
+env=${env:-$1}
+if [[ -z $env ]]; then echo "Usage: $0 env"; exit 1; fi
+
+echo -e "\033[34mRunning Docker Swarm nodes...\033[0m"
+
+source settings
+
+for (( i=1; i<=$cluster_size; i++ )); do
+  node=docker-swarm-${env}-$i
+  echo "Running swarm node on $node..."
+  node_ip=$(docker-machine ip $node)
+  eval $(docker-machine env --shell bash $node)
+  docker run -d --name swarm_node --restart=unless-stopped swarm join \
+         --advertise $node_ip:2376 consul://${node_ip}:8500
+done

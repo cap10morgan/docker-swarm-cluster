@@ -1,0 +1,20 @@
+#!/bin/bash
+
+set -e
+
+env=${env:-$1}
+if [[ -z $env ]]; then echo "Usage: $0 env"; exit 1; fi
+
+echo -e "\033[34mConfiguring Docker daemons to use Consul...\033[0m"
+
+source settings
+
+for (( i=1; i<=$cluster_size; i++ )); do
+  node=docker-swarm-${env}-$i
+  node_ip=$(docker-machine ip $node)
+  ssh_cmd="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no $user@$node_ip"
+  echo "Configuring Docker cluster-store on $node..."
+  $ssh_cmd "sudo sed -i '/^ExecStart=/s|\$| --cluster-store=consul:\/\/${node_ip}:8500 --cluster-advertise=ens3:2376|' /etc/systemd/system/docker.service"
+  $ssh_cmd sudo systemctl daemon-reload
+  $ssh_cmd sudo service docker restart
+done

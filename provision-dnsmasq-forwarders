@@ -1,0 +1,20 @@
+#!/bin/bash
+
+set -e
+
+env=${env:-$1}
+if [[ -z $env ]]; then echo "Usage: $0 env"; exit 1; fi
+
+echo -e "\033[34mProvisioning dnsmasq forwarders for Consul DNS...\033[0m"
+
+source settings
+
+for (( i=1; i<=$cluster_size; i++ )); do
+  node=docker-swarm-${env}-$i
+  echo "Running dnsmasq on $node..."
+  node_ip=$(docker-machine ip $node)
+  eval $(docker-machine env --shell bash $node)
+  docker run -d --name dnsmasq -p 53:53/tcp -p 53:53/udp --cap-add=NET_ADMIN \
+         --restart=unless-stopped \
+         andyshinn/dnsmasq:2.75 -S /consul/${node_ip}#8600 --log-facility=-
+done

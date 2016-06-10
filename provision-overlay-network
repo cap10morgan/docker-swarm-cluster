@@ -1,0 +1,13 @@
+#!/bin/bash
+
+set -e
+
+env=${env:-$1}
+if [[ -z $env ]]; then echo "Usage: $0 env"; exit 1; fi
+
+echo -e "\033[34mCreating $env overlay network...\033[0m"
+
+source settings
+
+eval $(docker-machine env --shell bash docker-swarm-${env}-1)
+docker network create --driver overlay --subnet=$overlay_network_subnet $env

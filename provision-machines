@@ -1,0 +1,28 @@
+#!/bin/bash
+
+set -e
+
+env=${env:-$1}
+if [[ -z $env ]]; then echo "Usage: $0 env"; exit 1; fi
+
+echo -e "\033[34mProvisioning $env cluster with docker-machine...\033[0m"
+
+source settings
+
+for (( i=1; i<=$cluster_size; i++ )); do
+  # --native-ssh works around a bug where it was setting the permissions too
+  # open on the private SSH key in ~/.docker/machine/machines/... even if it
+  # wasn't creating it. This rendered it unable to SSH into the machines it
+  # was creating.
+  docker-machine --native-ssh create --driver amazonec2 \
+                 --amazonec2-region $region --amazonec2-vpc-id $vpc_id \
+                 --amazonec2-security-group docker-swarm-$env \
+                 --amazonec2-subnet-id ${subnet_ids[$i-1]} \
+                 --amazonec2-instance-type $instance_type \
+                 --amazonec2-use-private-address \
+                 --amazonec2-use-ebs-optimized-instance \
+                 --amazonec2-ssh-keypath $ssh_keypath \
+                 --amazonec2-ami $ami --amazonec2-zone ${zones[$i-1]} \
+                 docker-swarm-${env}-$i &
+done
+wait

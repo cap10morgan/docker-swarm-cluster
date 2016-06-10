@@ -1,0 +1,22 @@
+#!/bin/bash
+
+set -e
+
+env=${env:-$1}
+if [[ -z $env ]]; then echo "Usage: $0 env"; exit 1; fi
+
+echo -e "\033[34mRunning Docker Swarm managers...\033[0m"
+
+source settings
+
+for (( i=1; i<=$cluster_size; i++ )); do
+  node=docker-swarm-${env}-$i
+  echo "Running swarm manager on $node..."
+  node_ip=$(docker-machine ip $node)
+  eval $(docker-machine env --shell bash $node)
+  docker run -d -p 4000:4000 --name swarm_manager --restart=unless-stopped \
+         --volume /etc/docker:/tls:ro swarm manage -H :4000 --tlsverify \
+         --tlscacert /tls/ca.pem --tlscert /tls/server.pem \
+         --tlskey /tls/server-key.pem --replication --advertise $node_ip:4000 \
+         consul://${node_ip}:8500
+done

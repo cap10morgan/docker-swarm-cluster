@@ -1,0 +1,26 @@
+#!/bin/bash
+
+set -e
+
+env=${env:-$1}
+if [[ -z $env ]]; then echo "Usage: $0 env"; exit 1; fi
+
+echo -e "\033[34mProvisioning RabbitMQ cluster...\033[0m"
+
+source settings
+
+node_ip=$(docker-machine ip docker-swarm-${env}-1)
+eval $(docker-machine env --shell bash docker-swarm-${env}-1)
+
+for (( i=1; i<=$cluster_size; i++ )); do
+  echo "Running RabbitMQ node $i"
+  docker -H ${node_ip}:4000 run -d --net $env --dns=172.17.0.1 \
+         --dns-search=node.consul --name rabbitmq-$i \
+         --hostname rabbitmq-$i -p 5672:5672 -p 15672:15672 -p 4369:4369 \
+         -p 25672:25672 --restart=unless-stopped -e AUTOCLUSTER_TYPE=consul \
+         -e AUTOCLUSTER_LOG_LEVEL=debug -e CONSUL_HOST=172.17.0.1 \
+         -e CONSUL_SVC_ADDR_AUTO=true \
+         cap10morgan/rabbitmq-autocluster-debug:0.6.0
+  # give the first node a chance to come up & register w/ consul
+  if [[ $i == 1 ]]; then sleep 30; fi
+done

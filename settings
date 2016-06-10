@@ -1,5 +1,6 @@
 cluster_size=3
 overlay_network_subnet=10.37.6.0/24
+overlay_network_gateway=10.37.6.1
 region=us-west-2
 vpc_id=vpc-35de3850
 subnet_ids=(subnet-40be5025 subnet-fe67698a subnet-bc879afa)

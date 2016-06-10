@@ -1,4 +1,6 @@
-These scripts are for provisioning Docker Swarm clusters with Consul and RabbitMQ.
+# docker-swarm-cluster
+
+This is a set of Bash scripts for provisioning Docker Swarm clusters with Consul and RabbitMQ.
 
 Consul (or something like it) is a requirement for robust Docker Swarm clusters, so it's not really optional.
 
